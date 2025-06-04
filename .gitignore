@@ -12,3 +12,31 @@ terraform.rc
 *.tfvars  
 .terraform.lock.hcl
 .terraform/*
+
+# Terraform directories
+.terraform/
+*.tfstate
+*.tfstate.backup
+crash.log
+
+# Sensitive variable files
+*.tfvars
+*.tfvars.json
+
+# Local override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI configuration
+.terraformrc
+terraform.rc
+
+# Mac and Windows junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VS Code settings
+.vscode/
