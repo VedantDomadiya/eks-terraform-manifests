@@ -1,0 +1,42 @@
+name: 'Terraform EKS Deployment'
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  terraform:
+    name: 'Terraform'
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+    steps:
+      - name: Checkout Terraform Manifests Repo
+        uses: actions/checkout@v3
+
+      - name: Checkout Config Repo
+        uses: actions/checkout@v3
+        with:
+          repository: VedantDomadiya/eks-config  
+          path: eks-config
+          token: ${{ secrets.GH_PAT }} # We will create this secret
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -var-file="eks-config/terraform.tfvars" -no-color
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -var-file="eks-config/terraform.tfvars"
