@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-client-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-client
+  template:
+    metadata:
+      labels:
+        app: my-client
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:latest
+        command: ["/bin/sh", "-c", "sleep 3600"] # Keep the pod running
