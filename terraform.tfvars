@@ -13,6 +13,6 @@ private_subnet_cidrs = ["10.0.3.0/24", "10.0.4.0/24"]
 
 # EKS Node Group Settings
 instance_types = ["t2.micro"] 
-desired_size   = 1
+desired_size   = 2
 min_size       = 1
 max_size       = 2
