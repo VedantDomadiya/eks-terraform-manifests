@@ -158,3 +158,80 @@ resource "aws_iam_role_policy_attachment" "cluster_autoscaler_attach" {
   role       = aws_iam_role.cluster_autoscaler.name
   policy_arn = aws_iam_policy.cluster_autoscaler.arn
 }
+
+# *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
+# *-*-*-*-*-*Karpenter*-*-*-*-*-*-
+# *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
+
+# IAM Role and Instance Profile for nodes launched by Karpenter
+resource "aws_iam_role" "karpenter_node" {
+  name = "${var.cluster_name}-karpenter-node-role"
+  assume_role_policy = jsonencode({
+    Version   = "2012-10-17",
+    Statement = [
+      {
+        Effect    = "Allow",
+        Principal = { Service = "ec2.amazonaws.com" },
+        Action    = "sts:AssumeRole"  
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "karpenter_node_worker_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+  role       = aws_iam_role.karpenter_node.name
+}
+
+resource "aws_iam_role_policy_attachment" "karpenter_node_cni_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+  role       = aws_iam_role.karpenter_node.name
+}
+
+resource "aws_iam_role_policy_attachment" "karpenter_node_ssm_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+  role       = aws_iam_role.karpenter_node.name
+}
+
+resource "aws_iam_role_policy_attachment" "karpenter_node_registry_read_only" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  role       = aws_iam_role.karpenter_node.name
+}
+
+resource "aws_iam_instance_profile" "karpenter" {
+  name = "${var.cluster_name}-karpenter-instance-profile"
+  role = aws_iam_role.karpenter_node.name
+}
+
+
+# IAM Role for the Karpenter Controller (to be used by its Service Account)
+data "aws_iam_policy_document" "karpenter_controller_assume_role_policy" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    effect  = "Allow"
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub"
+      values   = ["system:serviceaccount:karpenter:karpenter"]
+    }
+    principals {
+      identifiers = [aws_iam_openid_connect_provider.eks.arn]
+      type        = "Federated"
+    }
+  }
+}
+
+resource "aws_iam_role" "karpenter_controller" {
+  name               = "${var.cluster_name}-karpenter-controller-role"
+  assume_role_policy = data.aws_iam_policy_document.karpenter_controller_assume_role_policy.json
+}
+
+resource "aws_iam_policy" "karpenter_controller" {
+  name = "${var.cluster_name}-karpenter-controller-policy"
+  policy = file("${path.module}/karpenter-controller-policy.json") # We will create this JSON file
+}
+
+resource "aws_iam_role_policy_attachment" "karpenter_controller_attach" {
+  role       = aws_iam_role.karpenter_controller.name
+  policy_arn = aws_iam_policy.karpenter_controller.arn
+}
