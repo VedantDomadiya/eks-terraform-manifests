@@ -31,6 +31,10 @@ resource "aws_eks_cluster" "main" {
     subnet_ids = var.subnet_ids
   }
 
+  access_config {
+    authentication_mode = "API"
+  }
+
   depends_on = [
     aws_iam_role_policy_attachment.cluster_amazon_eks_cluster_policy,
   ]
@@ -235,3 +239,26 @@ resource "aws_iam_role_policy_attachment" "karpenter_controller_attach" {
   role       = aws_iam_role.karpenter_controller.name
   policy_arn = aws_iam_policy.karpenter_controller.arn
 }
+
+# data "aws_security_group" "cluster_node_sg" {
+#   filter {
+#     name   = "tag:eks:cluster-name"
+#     values = [var.cluster_name]
+#   }
+#   filter {
+#     name = "vpc-id"
+#     values = [var.vpc_id]
+#   }
+# }
+
+# resource "aws_security_group_rule" "control_plane_to_nodes_for_karpenter_webhook" {
+#   type                     = "ingress"
+#   from_port                = 9443 # Port for Karpenter Webhook
+#   to_port                  = 9443
+#   protocol                 = "tcp"
+#   # This now refers directly to the cluster being created in this module.
+#   source_security_group_id = aws_eks_cluster.main.vpc_config[0].cluster_security_group_id
+  
+#   # This part (using a data source to find the node SG) is still correct.
+#   # security_group_id = data.aws_security_group.cluster_node_sg.id
+# }
