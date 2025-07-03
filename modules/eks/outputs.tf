@@ -27,3 +27,13 @@ output "karpenter_controller_role_arn" {
   description = "ARN of the IAM role for the Karpenter controller."
   value       = aws_iam_role.karpenter_controller.arn
 }
+
+output "lbc_controller_role_arn" {
+  description = "ARN of the IAM role for the AWS Load Balancer Controller."
+  value       = aws_iam_role.lbc_controller.arn
+}
+
+output "ebs_csi_controller_role_arn" {
+  description = "ARN of the IAM role for the EBS CSI Driver."
+  value       = aws_iam_role.ebs_csi_controller.arn
+}

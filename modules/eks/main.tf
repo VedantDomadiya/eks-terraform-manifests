@@ -79,7 +79,12 @@ resource "aws_eks_node_group" "main" {
   node_group_name = "${var.cluster_name}-node-group"
   node_role_arn   = aws_iam_role.node_group.arn
   subnet_ids      = var.subnet_ids
-  instance_types  = var.instance_types
+#  instance_types  = var.instance_types
+  
+  launch_template {
+    id      = aws_launch_template.eks_nodes.id
+    version = aws_launch_template.eks_nodes.latest_version
+  }
 
   scaling_config {
     desired_size = var.desired_size
@@ -240,25 +245,97 @@ resource "aws_iam_role_policy_attachment" "karpenter_controller_attach" {
   policy_arn = aws_iam_policy.karpenter_controller.arn
 }
 
-# data "aws_security_group" "cluster_node_sg" {
-#   filter {
-#     name   = "tag:eks:cluster-name"
-#     values = [var.cluster_name]
-#   }
-#   filter {
-#     name = "vpc-id"
-#     values = [var.vpc_id]
-#   }
-# }
+# *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
+# *-*-*-*-AWS Load Balancer-*-*-*-
+# *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
 
-# resource "aws_security_group_rule" "control_plane_to_nodes_for_karpenter_webhook" {
-#   type                     = "ingress"
-#   from_port                = 9443 # Port for Karpenter Webhook
-#   to_port                  = 9443
-#   protocol                 = "tcp"
-#   # This now refers directly to the cluster being created in this module.
-#   source_security_group_id = aws_eks_cluster.main.vpc_config[0].cluster_security_group_id
+# IAM Role for the AWS Load Balancer Controller
+data "aws_iam_policy_document" "lbc_assume_role_policy" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    effect  = "Allow"
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub"
+      # This service account name is defined by the LBC Helm Chart
+      values   = ["system:serviceaccount:kube-system:aws-load-balancer-controller"]
+    }
+
+    principals {
+      identifiers = [aws_iam_openid_connect_provider.eks.arn]
+      type        = "Federated"
+    }
+  }
+}
+
+resource "aws_iam_role" "lbc_controller" {
+  name               = "${var.cluster_name}-lbc-controller-role"
+  assume_role_policy = data.aws_iam_policy_document.lbc_assume_role_policy.json
+}
+
+resource "aws_iam_policy" "lbc_controller" {
+  name        = "${var.cluster_name}-lbc-iam-policy"
+  description = "IAM policy for the AWS Load Balancer Controller"
+  policy      = file("${path.module}/lbc_iam_policy.json") # References the file you just downloaded
+}
+
+resource "aws_iam_role_policy_attachment" "lbc_controller_attach" {
+  policy_arn = aws_iam_policy.lbc_controller.arn
+  role       = aws_iam_role.lbc_controller.name
+}
+
+resource "aws_launch_template" "eks_nodes" {
+  name = "${var.cluster_name}-node-template"
   
-#   # This part (using a data source to find the node SG) is still correct.
-#   # security_group_id = data.aws_security_group.cluster_node_sg.id
-# }
+  # Set the instance type here instead of in the node group
+  instance_type = var.instance_types[0]
+
+  metadata_options {
+    # This requires IMDSv2, which is more secure
+    http_tokens = "required"
+    # This is the key fix: Increase the hop limit for containers
+    http_put_response_hop_limit = 2
+  }
+}
+
+# IAM Role for the EBS CSI Driver
+data "aws_iam_policy_document" "ebs_csi_assume_role_policy" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    effect  = "Allow"
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub"
+      # This service account name is defined by the EBS CSI Driver add-on
+      values   = ["system:serviceaccount:kube-system:ebs-csi-controller-sa"]
+    }
+
+    principals {
+      identifiers = [aws_iam_openid_connect_provider.eks.arn]
+      type        = "Federated"
+    }
+  }
+}
+
+resource "aws_iam_role" "ebs_csi_controller" {
+  name               = "${var.cluster_name}-ebs-csi-controller-role"
+  assume_role_policy = data.aws_iam_policy_document.ebs_csi_assume_role_policy.json
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi_controller_attach" {
+  # This is a pre-existing, managed policy from AWS
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+  role       = aws_iam_role.ebs_csi_controller.name
+}
+
+resource "aws_eks_addon" "ebs_csi" {
+  cluster_name             = aws_eks_cluster.main.name
+  addon_name               = "aws-ebs-csi-driver"
+  # This links the add-on to the IAM role we just created
+  service_account_role_arn = aws_iam_role.ebs_csi_controller.arn
+
+  # Ensure this depends on the role being fully created
+  depends_on = [aws_iam_role_policy_attachment.ebs_csi_controller_attach]
+}
