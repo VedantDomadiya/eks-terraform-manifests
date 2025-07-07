@@ -339,3 +339,53 @@ resource "aws_eks_addon" "ebs_csi" {
   # Ensure this depends on the role being fully created
   depends_on = [aws_iam_role_policy_attachment.ebs_csi_controller_attach]
 }
+
+resource "aws_efs_file_system" "main" {
+  creation_token = "${var.cluster_name}-efs"
+  tags = {
+    Name = "${var.cluster_name}-efs"
+  }
+}
+
+resource "aws_efs_mount_target" "main" {
+  # Create one mount target in each private subnet
+  count           = length(var.private_subnet_ids)
+  file_system_id  = aws_efs_file_system.main.id
+  subnet_id       = var.private_subnet_ids[count.index]
+  security_groups = [var.efs_security_group_id]
+}
+
+# IAM Role for the EFS CSI Driver
+data "aws_iam_policy_document" "efs_csi_assume_role_policy" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    effect  = "Allow"
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub"
+      values   = ["system:serviceaccount:kube-system:efs-csi-controller-sa"]
+    }
+    principals {
+      identifiers = [aws_iam_openid_connect_provider.eks.arn]
+      type        = "Federated"
+    }
+  }
+}
+
+resource "aws_iam_role" "efs_csi_controller" {
+  name               = "${var.cluster_name}-efs-csi-controller-role"
+  assume_role_policy = data.aws_iam_policy_document.efs_csi_assume_role_policy.json
+}
+
+resource "aws_iam_role_policy_attachment" "efs_csi_controller_attach" {
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
+  role       = aws_iam_role.efs_csi_controller.name
+}
+
+# EKS Add-on for the EFS CSI Driver
+resource "aws_eks_addon" "efs_csi" {
+  cluster_name             = aws_eks_cluster.main.name
+  addon_name               = "aws-efs-csi-driver"
+  service_account_role_arn = aws_iam_role.efs_csi_controller.arn
+  depends_on               = [aws_iam_role_policy_attachment.efs_csi_controller_attach]
+}

@@ -1,0 +1,21 @@
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: efs-sc
+provisioner: efs.csi.aws.com
+parameters:
+  provisioningMode: efs-ap
+  fileSystemId: fs-0b869f39b5fc74bdd # <-- REPLACE WITH YOUR EFS FILE SYSTEM ID
+  directoryPerms: "700"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: efs-storage-claim
+spec:
+  accessModes:
+    - ReadWriteMany # EFS can be mounted by many pods at once
+  storageClassName: efs-sc
+  resources:
+    requests:
+      storage: 5Gi # This value is not enforced by EFS but is required by Kubernetes

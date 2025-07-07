@@ -18,4 +18,6 @@ module "eks" {
   desired_size     = var.desired_size
   max_size         = var.max_size
   min_size         = var.min_size
+  private_subnet_ids    = module.vpc.private_subnet_ids
+  efs_security_group_id = module.vpc.efs_security_group_id
 }

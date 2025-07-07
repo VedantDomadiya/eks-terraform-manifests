@@ -1,5 +1,7 @@
 resource "aws_vpc" "main" {
   cidr_block = var.vpc_cidr_block
+  enable_dns_hostnames = true
+  enable_dns_support   = true
   tags = {
     Name = "${var.cluster_name}-vpc"
   }
@@ -91,4 +93,37 @@ resource "aws_route_table_association" "private" {
   count          = length(aws_subnet.private)
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = aws_route_table.private[count.index].id
+}
+
+resource "aws_security_group" "efs" {
+  name        = "${var.cluster_name}-efs-sg"
+  description = "Allow NFS traffic for EFS"
+  vpc_id      = aws_vpc.main.id
+
+  # Allow inbound NFS traffic from anywhere in the VPC
+  ingress {
+    from_port   = 2049
+    to_port     = 2049
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+  }
+  # This allows nodes to resolve the EFS DNS name
+  ingress {
+    from_port   = 53
+    to_port     = 53
+    protocol    = "udp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+  }
+
+  # Allow all outbound traffic
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.cluster_name}-efs-sg"
+  }
 }
